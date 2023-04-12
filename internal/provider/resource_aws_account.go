@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"sync"
 	"time"
+
+	"golang.org/x/sync/semaphore"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/organizations"
@@ -18,6 +19,7 @@ import (
 
 var (
 	invalidProductNameChars = regexp.MustCompile("[^a-zA-Z0-9._-]")
+	accountSemaphore = semaphore.NewWeighted(5)
 )
 
 func resourceAWSAccount() *schema.Resource {
@@ -123,7 +125,7 @@ func resourceAWSAccount() *schema.Resource {
 	}
 }
 
-var accountMutex sync.Mutex
+
 
 func resourceAWSAccountCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	scconn := m.(*AWSClient).scconn
@@ -183,8 +185,8 @@ func resourceAWSAccountCreate(ctx context.Context, d *schema.ResourceData, m int
 		params.PathId = aws.String(v.(string))
 	}
 
-	accountMutex.Lock()
-	defer accountMutex.Unlock()
+	accountSemaphore.Acquire(ctx, 1)
+	defer accountSemaphore.Release(1)
 
 	account, err := scconn.ProvisionProduct(params)
 	if err != nil {
@@ -374,8 +376,8 @@ func resourceAWSAccountUpdate(ctx context.Context, d *schema.ResourceData, m int
 			params.PathId = aws.String(pathIdConfig.AsString())
 		}
 
-		accountMutex.Lock()
-		defer accountMutex.Unlock()
+		accountSemaphore.Acquire(ctx, 1)
+		defer accountSemaphore.Release(1)
 
 		account, err := scconn.UpdateProvisionedProduct(params)
 		if err != nil {
@@ -401,7 +403,7 @@ func resourceAWSAccountUpdate(ctx context.Context, d *schema.ResourceData, m int
 	return resourceAWSAccountRead(ctx, d, m)
 }
 
-func resourceAWSAccountDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceAWSAccountDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	scconn := m.(*AWSClient).scconn
 	organizationsconn := m.(*AWSClient).organizationsconn
 
@@ -412,8 +414,8 @@ func resourceAWSAccountDelete(_ context.Context, d *schema.ResourceData, m inter
 		Id: aws.String(d.Id()),
 	})
 
-	accountMutex.Lock()
-	defer accountMutex.Unlock()
+	accountSemaphore.Acquire(ctx, 1)
+	defer accountSemaphore.Release(1)
 
 	account, err := scconn.TerminateProvisionedProduct(&servicecatalog.TerminateProvisionedProductInput{
 		ProvisionedProductId: aws.String(d.Id()),
