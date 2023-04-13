@@ -185,7 +185,10 @@ func resourceAWSAccountCreate(ctx context.Context, d *schema.ResourceData, m int
 		params.PathId = aws.String(v.(string))
 	}
 
-	accountSemaphore.Acquire(ctx, 1)
+	err = accountSemaphore.Acquire(ctx, 1)
+	if err != nil {
+		return diag.Errorf("error acquiring semaphore: %v", err)
+	}
 	defer accountSemaphore.Release(1)
 
 	account, err := scconn.ProvisionProduct(params)
@@ -376,7 +379,10 @@ func resourceAWSAccountUpdate(ctx context.Context, d *schema.ResourceData, m int
 			params.PathId = aws.String(pathIdConfig.AsString())
 		}
 
-		accountSemaphore.Acquire(ctx, 1)
+		err = accountSemaphore.Acquire(ctx, 1)
+		if err != nil {
+			return diag.Errorf("error acquiring account semaphore: %v", err)
+		}
 		defer accountSemaphore.Release(1)
 
 		account, err := scconn.UpdateProvisionedProduct(params)
@@ -414,7 +420,14 @@ func resourceAWSAccountDelete(ctx context.Context, d *schema.ResourceData, m int
 		Id: aws.String(d.Id()),
 	})
 
-	accountSemaphore.Acquire(ctx, 1)
+	if err != nil {
+		return diag.Errorf("error describing provisioned account %s: %v", name, err)
+	}
+
+	err = accountSemaphore.Acquire(ctx, 1)
+	if err != nil {
+		return diag.Errorf("error acquiring account semaphore: %v", err)
+	}
 	defer accountSemaphore.Release(1)
 
 	account, err := scconn.TerminateProvisionedProduct(&servicecatalog.TerminateProvisionedProductInput{
